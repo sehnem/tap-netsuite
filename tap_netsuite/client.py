@@ -7,20 +7,23 @@ import random
 from datetime import datetime
 from decimal import Decimal
 from functools import cached_property
+from time import time
 from typing import Iterable, Optional
 
 import backoff
+from backports.cached_property import cached_property
 from memoization import cached
 from pendulum import parse
 from singer import Transformer
 from singer_sdk import typing as th
+from singer_sdk.exceptions import FatalAPIError, RetriableAPIError
 from singer_sdk.streams import Stream
 from zeep import Client
 from zeep.cache import SqliteCache
 from zeep.helpers import serialize_object
 from zeep.transports import Transport
 
-from tap_netsuite.constants import REPLICATION_KEYS
+from tap_netsuite.constants import REPLICATION_KEYS, RETRYABLE_ERRORS
 from tap_netsuite.exceptions import TypeNotFound
 
 
@@ -30,6 +33,7 @@ class NetsuiteStream(Stream):
     page_size = 500
     primary_keys = ["internalId"]
     search_type_name = None
+    valid_requests = ["getAllResult", "searchResult", "searchMoreWithIdResult"]
 
     @cached_property
     def account(self):
@@ -37,19 +41,27 @@ class NetsuiteStream(Stream):
 
     @cached_property
     def wsdl_url(self):
-        return f"https://{self.account}.suitetalk.api.netsuite.com/wsdl/v2022_2_0/netsuite.wsdl"
+        return (
+            f"https://{self.account}.suitetalk.api.netsuite.com/"
+            "wsdl/v2022_2_0/netsuite.wsdl"
+        )
 
     @cached_property
     def datacenter_url(self):
-        return f"https://{self.account}.suitetalk.api.netsuite.com/services/NetSuitePort_2022_2"
+        return (
+            f"https://{self.account}.suitetalk.api.netsuite.com/"
+            "services/NetSuitePort_2022_2"
+        )
 
     @property
     def client(self):
-        path = "cache.db"
-        timeout = 2592000
-        cache = SqliteCache(path=path, timeout=timeout)
-        transport = Transport(cache=cache)
-        return Client(self.wsdl_url, transport=transport)
+        if self.config["cache_wsdl"]:
+            path = "cache.db"
+            timeout = 2592000
+            cache = SqliteCache(path=path, timeout=timeout)
+            transport = Transport(cache=cache)
+            return Client(self.wsdl_url, transport=transport)
+        return Client(self.wsdl_url)
 
     @cached_property
     def service_proxy(self):
@@ -115,26 +127,53 @@ class NetsuiteStream(Stream):
             soapheaders["searchPreferences"] = search_preferences(**preferences)
         return soapheaders
 
-    @backoff.on_exception(backoff.expo, Exception, max_tries=5, factor=3)
+    @backoff.on_exception(backoff.expo, RetriableAPIError, max_tries=5, factor=2)
     def request(self, name, *args, **kwargs):
         method = getattr(self.service_proxy, name)
         # call the service:
         is_search = name == "search"
         headers = self.build_headers(include_search_preferences=is_search)
+
+        request_start_time = time()
         response = method(*args, _soapheaders=headers, **kwargs)
-        return response
+        request_duration = time() - request_start_time
+
+        response_body_attrs = list(vars(response.body)["__values__"].keys())
+        request_type = next(k for k in response_body_attrs if k in self.valid_requests)
+
+        result = getattr(response.body, request_type)
+
+        if hasattr(result, "totalRecords"):
+            page_size = result.totalRecords
+        elif result.totalPages == result.pageIndex:
+            page_size = result.totalRecords - (result.pageIndex - 1) * result.pageSize
+        else:
+            page_size = result.pageSize
+
+        request_status = "SUCCESS" if result.status.isSuccess else "ERROR"
+        extra_tags = dict(page_size=page_size)
+        metric = {
+            "type": "timer",
+            "metric": "request_duration",
+            "value": round(request_duration, 4),
+            "tags": {
+                "object": self.name,
+                "status": request_status,
+            },
+        }
+        self._write_metric_log(metric=metric, extra_tags=extra_tags)
+
+        self.validate_response(result)
+        return result
 
     def get_all_records(self, context):
         type_name = self.name[0].lower() + self.name[1:]
         get_all_record = self.search_client("GetAllRecord")
         record = get_all_record(recordType=type_name)
         response = self.request("getAll", record=record)
-        response = response.body.getAllResult
 
-        status = response.status
-        if status.isSuccess:
-            records = response["recordList"]["record"]
-            return serialize_object(records)
+        records = response["recordList"]["record"]
+        return serialize_object(records)
 
     @cached
     def get_starting_time(self, context):
@@ -160,21 +199,22 @@ class NetsuiteStream(Stream):
             )
 
         # request records
-        response = self.request("search", searchRecord=search_type)
-        result = response.body.searchResult
+        result = self.request("search", searchRecord=search_type)
         total_pages = result.totalPages
         page_index = result.pageIndex
         search_id = result.searchId
+
+        if total_pages == 0:
+            return []
 
         for record in result["recordList"]["record"]:
             yield serialize_object(record)
 
         while total_pages > page_index:
             next_page = page_index + 1
-            response = self.request(
+            result = self.request(
                 "searchMoreWithId", searchId=search_id, pageIndex=next_page
             )
-            result = response.body.searchResult
             page_index = result.pageIndex
 
             for record in result["recordList"]["record"]:
@@ -249,3 +289,18 @@ class NetsuiteStream(Stream):
                 property = th.Property(field_name, schema_type)
                 properties.append(property)
         return properties
+
+    def validate_response(self, result) -> None:
+        """Validate zeep response."""
+        if not result.status.isSuccess:
+            status = result.status.statusDetail[0]
+            if status.code in RETRYABLE_ERRORS:
+                msg = self.response_error_message(status)
+                raise RetriableAPIError(msg, status)
+            else:
+                msg = self.response_error_message(status)
+                raise FatalAPIError(msg)
+
+    def response_error_message(self, status) -> str:
+        """Build error message for invalid http statuses."""
+        return f'{status.code} error for {self.name}: "{status.message}"'

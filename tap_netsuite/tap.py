@@ -49,6 +49,12 @@ class TapNetsuite(Tap):
             description="The netsuite account code token secret",
         ),
         th.Property(
+            "cache_wsdl",
+            th.BooleanType,
+            default=True,
+            description="If the WSDL should be cached",
+        ),
+        th.Property(
             "start_date",
             th.DateTimeType,
             description="The earliest record date to sync",
@@ -86,7 +92,10 @@ class TapNetsuite(Tap):
         """Return a list of discovered streams."""
 
         account = self.config["account"].replace("_", "-")
-        url = f"https://{account}.suitetalk.api.netsuite.com/xsd/platform/v2022_2_0/coreTypes.xsd"
+        url = (
+            f"https://{account}.suitetalk.api.netsuite.com/"
+            "xsd/platform/v2022_2_0/coreTypes.xsd"
+        )
         response = requests.get(url)
         types_xml = minidom.parseString(response.text)
 

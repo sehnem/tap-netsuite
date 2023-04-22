@@ -1,5 +1,12 @@
 REPLICATION_KEYS = ["lastmodifieddate", "lastmoddate"]
 
+RETRYABLE_ERRORS = [
+    "ACCT_TEMP_UNAVAILABLE",
+    "BILL_PAY_STATUS_UNAVAILABLE",
+    "BILLPAY_SRVC_UNAVAILBL",
+    "PAYROLL_IN_PROCESS",
+]
+
 SEARCH_ONLY_FIELDS = ["AccountingTransaction", "Item", "Transaction"]
 
 CUSTOM_SEARCH_FIELDS = {
