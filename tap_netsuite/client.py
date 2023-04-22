@@ -284,6 +284,8 @@ class NetsuiteStream(Stream):
 
         for field_name, type_obj in fields_list:
             schema_type = self.extract_type(type_obj)
+            if type_obj.name in ["nullFieldList"]:
+                continue
             if schema_type:
                 property = th.Property(field_name, schema_type)
                 properties.append(property)
