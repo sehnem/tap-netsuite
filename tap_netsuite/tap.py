@@ -7,9 +7,8 @@ import requests
 from singer_sdk import Stream, Tap
 from singer_sdk import typing as th
 
-from tap_netsuite.client import NetsuiteStream
+from tap_netsuite.client import NetsuiteGetAllStream, NetsuiteSearchPaginatedStream
 from tap_netsuite.constants import CUSTOM_SEARCH_FIELDS, SEARCH_ONLY_FIELDS
-from tap_netsuite.exceptions import TypeNotFound
 
 
 class TapNetsuite(Tap):
@@ -77,12 +76,14 @@ class TapNetsuite(Tap):
         type_records = type_records.getElementsByTagName("enumeration")
         type_records = [i.getAttribute("value") for i in type_records]
         for name in type_records:
+            soap_type = name
             name = name[0].upper() + name[1:]
             if name in SEARCH_ONLY_FIELDS:
                 continue
             types.append(
                 {
                     "name": name,
+                    "soap_type": soap_type,
                     "record_type": record_type,
                 }
             )
@@ -99,25 +100,24 @@ class TapNetsuite(Tap):
         response = requests.get(url)
         types_xml = minidom.parseString(response.text)
 
-        core_types = []
-        core_types.extend(self.extract_xml_types(types_xml, "GetAllRecordType"))
-        core_types.extend(self.extract_xml_types(types_xml, "SearchRecordType"))
+        for type_def in self.extract_xml_types(types_xml, "GetAllRecordType"):
+            yield type(type_def["name"], (NetsuiteGetAllStream,), type_def)(tap=self)
+
+        for type_def in self.extract_xml_types(types_xml, "SearchRecordType"):
+            yield type(type_def["name"], (NetsuiteSearchPaginatedStream,), type_def)(
+                tap=self
+            )
 
         for search_type, types in CUSTOM_SEARCH_FIELDS.items():
             for type_name in types:
-                core_types.append(
-                    {
-                        "name": type_name,
-                        "record_type": "SearchRecordType",
-                        "search_type_name": search_type,
-                    }
-                )
-
-        for type_def in core_types:
-            try:
-                yield type(type_def["name"], (NetsuiteStream,), type_def)(tap=self)
-            except TypeNotFound:
-                self.logger.info(f"Type {type_def['name']} not found in WSDL.")
+                type_def = {
+                    "name": type_name,
+                    "record_type": "SearchRecordType",
+                    "search_type_name": search_type,
+                }
+                yield type(
+                    type_def["name"], (NetsuiteSearchPaginatedStream,), type_def
+                )(tap=self)
 
 
 if __name__ == "__main__":
