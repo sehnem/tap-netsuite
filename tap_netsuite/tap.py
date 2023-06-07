@@ -19,31 +19,31 @@ class TapNetsuite(Tap):
 
     config_jsonschema = th.PropertiesList(
         th.Property(
-            "account",
+            "ns_account",
             th.StringType,
             required=True,
             description="The netsuite account code",
         ),
         th.Property(
-            "consumer_key",
+            "ns_consumer_key",
             th.StringType,
             required=True,
             description="The netsuite account code consumer key",
         ),
         th.Property(
-            "consumer_secret",
+            "ns_consumer_secret",
             th.StringType,
             required=True,
             description="The netsuite account code consumer secret",
         ),
         th.Property(
-            "token_key",
+            "ns_token_key",
             th.StringType,
             required=True,
             description="The netsuite account code token key",
         ),
         th.Property(
-            "token_secret",
+            "ns_token_secret",
             th.StringType,
             required=True,
             description="The netsuite account code token secret",
@@ -91,7 +91,7 @@ class TapNetsuite(Tap):
     def discover_streams(self) -> List[Stream]:
         """Return a list of discovered streams."""
 
-        account = self.config["account"].replace("_", "-")
+        account = self.config["ns_account"].replace("_", "-")
         url = (
             f"https://{account}.suitetalk.api.netsuite.com/"
             "xsd/platform/v2022_2_0/coreTypes.xsd"

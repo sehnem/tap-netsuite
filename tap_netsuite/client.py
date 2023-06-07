@@ -36,7 +36,7 @@ class NetsuiteStream(Stream):
 
     @cached_property
     def account(self):
-        return self.config["account"].replace("_", "-")
+        return self.config["ns_account"].replace("_", "-")
 
     @cached_property
     def wsdl_url(self):
@@ -83,11 +83,11 @@ class NetsuiteStream(Stream):
         return self.search_client(search_type_name)
 
     def generate_token_passport(self):
-        consumer_key = self.config["consumer_key"]
-        consumer_secret = self.config["consumer_secret"]
-        token_key = self.config["token_key"]
-        token_secret = self.config["token_secret"]
-        account = self.config["account"]
+        consumer_key = self.config["ns_consumer_key"]
+        consumer_secret = self.config["ns_consumer_secret"]
+        token_key = self.config["ns_token_key"]
+        token_secret = self.config["ns_token_secret"]
+        account = self.config["ns_account"]
 
         nonce = "".join([str(random.randint(0, 9)) for _ in range(20)])
         timestamp = str(int(datetime.now().timestamp()))
