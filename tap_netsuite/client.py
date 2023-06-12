@@ -259,11 +259,38 @@ class NetsuiteStream(Stream):
             properties = self.unwrap_zeep(type_cls._xsd_type)
 
             if field_name == 'CustomFieldList':
-                array_type = th.ArrayType( 
+                array_type = th.ArrayType(
                     th.ObjectType(
                         th.Property("internalId",th.StringType),
-                        th.Property("value",th.CustomType({"type":["string","boolean","number"]})),
-                        th.Property("scriptId",th.StringType),        
+                        th.Property("scriptId",th.StringType),
+                        th.Property("value",th.CustomType({"anyOf": [
+                                {
+                                    "type":["array","null"],
+                                    "items": { 
+                                        "properties": { 
+                                            "internalId": { 
+                                                "type":["string","null"]
+                                            },
+                                            "externalId": { 
+                                                "type":["string","null"]
+                                            },
+                                            "name": { 
+                                                "type":["string","null"]
+                                            },
+                                            "typeId": { 
+                                                "type":["string","null"]
+                                            },
+                                        },
+                                        "type":["object","null"]
+                                    },
+                                },
+                                {
+                                    "type":["string","boolean","number","integer","null"]
+                                }
+
+                            ]
+                        })
+                        ),
                     )
                 )
                 properties.append(th.Property("customField",array_type))
