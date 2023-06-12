@@ -257,6 +257,17 @@ class NetsuiteStream(Stream):
         if hasattr(type_cls, "_xsd_type"):
             field_name = type_cls._xsd_type.name
             properties = self.unwrap_zeep(type_cls._xsd_type)
+
+            if field_name == 'CustomFieldList':
+                array_type = th.ArrayType( 
+                    th.ObjectType(
+                        th.Property("internalId",th.StringType),
+                        th.Property("value",th.CustomType({"type":["string","boolean","number"]})),
+                        th.Property("scriptId",th.StringType),        
+                    )
+                )
+                properties.append(th.Property("customField",array_type))
+
             object = th.ObjectType(*properties)
             if getattr(type_obj, "accepts_multiple", None):
                 object = th.ArrayType(object)
