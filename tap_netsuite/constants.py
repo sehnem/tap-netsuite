@@ -54,3 +54,64 @@ CUSTOM_SEARCH_FIELDS = {
     ],
     "ItemSearchBasic": ["InventoryItem"],
 }
+
+
+CUSTOM_FIELD_TYPES =  [
+    "crmCustomField",
+    "customList",
+    "customRecordCustomField",
+    "customSegment",
+    "entityCustomField",
+    "itemCustomField",
+    "itemOptionCustomField",
+    "otherCustomField",
+    "transactionBodyCustomField",
+    "transactionColumnCustomField"
+]
+
+
+
+CUSTOM_FIELD_SCHEMA =  {"anyOf": [
+                                {
+                                    "type":["array","null"],
+                                    "items": { 
+                                        "properties": { 
+                                            "internalId": { 
+                                                "type":["string","null"]
+                                            },
+                                            "externalId": { 
+                                                "type":["string","null"]
+                                            },
+                                            "name": { 
+                                                "type":["string","null"]
+                                            },
+                                            "typeId": { 
+                                                "type":["string","null"]
+                                            }
+                                        },
+                                        "type":"object"
+                                    },
+                                },
+                                {
+                                    "type":"object",
+                                     "properties": { 
+                                            "internalId": { 
+                                                "type":["string","null"]
+                                            },
+                                            "externalId": { 
+                                                "type":["string","null"]
+                                            },
+                                            "name": { 
+                                                "type":["string","null"]
+                                            },
+                                            "typeId": { 
+                                                "type":["string","null"]
+                                            }
+                                    }
+                                }, 
+                                {
+                                    "type":["string","boolean","integer","number"]
+                                }
+
+                            ]
+                        }

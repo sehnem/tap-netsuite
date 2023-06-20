@@ -22,7 +22,7 @@ from zeep.cache import SqliteCache
 from zeep.helpers import serialize_object
 from zeep.transports import Transport
 
-from tap_netsuite.constants import REPLICATION_KEYS, RETRYABLE_ERRORS
+from tap_netsuite.constants import REPLICATION_KEYS, RETRYABLE_ERRORS, CUSTOM_FIELD_TYPES, CUSTOM_FIELD_SCHEMA
 from tap_netsuite.exceptions import TypeNotFound
 
 
@@ -228,10 +228,16 @@ class NetsuiteStream(Stream):
         def pre_hook(data, _, schema):
             if schema.get("format") == "date-time" and data:
                 data = data.isoformat()
+            
+            
             return data
 
         with Transformer(pre_hook=pre_hook) as transformer:
             for record in response:
+                if record.get("customFieldList"):
+                    for field in record['customFieldList'].get("customField"):
+                        record[field['scriptId']] = field['value']
+
                 yield transformer.transform(record, self.schema)
 
     @cached_property
@@ -242,6 +248,22 @@ class NetsuiteStream(Stream):
             stream_catalog = next(streams, None)
             if stream_catalog:
                 return stream_catalog["schema"]
+        
+        if not hasattr(self._tap, "all_custom_fields"):
+            all_custom_fields = []
+            for field_type in CUSTOM_FIELD_TYPES:
+                customFields = self.service_proxy.getCustomizationId(customizationType=field_type,includeInactives=False,_soapheaders = self.build_headers())
+                if customFields['body']['getCustomizationIdResult']['customizationRefList']:
+                    for custom_field in customFields['body']['getCustomizationIdResult']['customizationRefList']['customizationRef']:
+
+                        property = th.Property(custom_field['scriptId'],th.CustomType(CUSTOM_FIELD_SCHEMA))
+                        all_custom_fields.append(property)
+            self._tap.all_custom_fields = all_custom_fields
+
+
+
+        
+        
         properties = self.unwrap_zeep(self.ns_type)
         replication_key = next(
             (p for p in properties if p.name.lower() in REPLICATION_KEYS), None
@@ -249,73 +271,78 @@ class NetsuiteStream(Stream):
         if replication_key:
             self.replication_key = replication_key.name
 
-        return th.PropertiesList(*properties).to_dict()
+        return th.PropertiesList(*(properties + self._tap.all_custom_fields)).to_dict()
 
     def extract_type(self, type_obj):
         type_cls = type_obj.type.accepted_types[0]
 
         if hasattr(type_cls, "_xsd_type"):
             field_name = type_cls._xsd_type.name
+            if field_name == 'CustomFieldList':
+                return None
+            
             properties = self.unwrap_zeep(type_cls._xsd_type)
 
-            if field_name == 'CustomFieldList':
-                array_type = th.ArrayType(
-                    th.ObjectType(
-                        th.Property("internalId",th.StringType),
-                        th.Property("scriptId",th.StringType),
-                        th.Property("value",th.CustomType({"anyOf": [
-                                {
-                                    "type":["array","null"],
-                                    "items": { 
-                                        "properties": { 
-                                            "internalId": { 
-                                                "type":["string","null"]
-                                            },
-                                            "externalId": { 
-                                                "type":["string","null"]
-                                            },
-                                            "name": { 
-                                                "type":["string","null"]
-                                            },
-                                            "typeId": { 
-                                                "type":["string","null"]
-                                            }
-                                        },
-                                        "type":"object"
-                                    },
-                                },
-                                {
-                                    "type":"object",
-                                     "properties": { 
-                                            "internalId": { 
-                                                "type":["string","null"]
-                                            },
-                                            "externalId": { 
-                                                "type":["string","null"]
-                                            },
-                                            "name": { 
-                                                "type":["string","null"]
-                                            },
-                                            "typeId": { 
-                                                "type":["string","null"]
-                                            }
-                                    }
-                                }, 
-                                {
-                                    "type":["string","boolean","integer","number"]
-                                }
+            # if field_name == 'CustomFieldList':
+            #     array_type = th.ArrayType(
+            #         th.ObjectType(
+            #             th.Property("internalId",th.StringType),
+            #             th.Property("scriptId",th.StringType),
+            #             th.Property("value",th.CustomType({"anyOf": [
+            #                     {
+            #                         "type":["array","null"],
+            #                         "items": { 
+            #                             "properties": { 
+            #                                 "internalId": { 
+            #                                     "type":["string","null"]
+            #                                 },
+            #                                 "externalId": { 
+            #                                     "type":["string","null"]
+            #                                 },
+            #                                 "name": { 
+            #                                     "type":["string","null"]
+            #                                 },
+            #                                 "typeId": { 
+            #                                     "type":["string","null"]
+            #                                 }
+            #                             },
+            #                             "type":"object"
+            #                         },
+            #                     },
+            #                     {
+            #                         "type":"object",
+            #                          "properties": { 
+            #                                 "internalId": { 
+            #                                     "type":["string","null"]
+            #                                 },
+            #                                 "externalId": { 
+            #                                     "type":["string","null"]
+            #                                 },
+            #                                 "name": { 
+            #                                     "type":["string","null"]
+            #                                 },
+            #                                 "typeId": { 
+            #                                     "type":["string","null"]
+            #                                 }
+            #                         }
+            #                     }, 
+            #                     {
+            #                         "type":["string","boolean","integer","number"]
+            #                     }
 
-                            ]
-                        })
-                        ),
-                    )
-                )
-                properties.append(th.Property("customField",array_type))
+            #                 ]
+            #             })
+            #             ),
+            #         )
+            #     )
+            #     properties.append(th.Property("customField",array_type))
 
             object = th.ObjectType(*properties)
             if getattr(type_obj, "accepts_multiple", None):
                 object = th.ArrayType(object)
             return th.Property(field_name, object)
+        
+        
 
         if type_cls is str:
             property = th.StringType
