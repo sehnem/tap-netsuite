@@ -19,7 +19,8 @@ class NetsuitePaginator(BaseAPIPaginator):
             extract_jsonpath("$.body.searchResult.searchId", input=response)
         )
 
-        if self._value is None or not self._value >= self._page_count:
+        if self._value is None or self._value >= self._page_count:
+            self._finished = True
             return None
 
         return self._value + 1

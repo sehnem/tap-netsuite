@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "tap-netsuite"
-version = "2.0.1"
+version = "2.0.2"
 description = "`tap-netsuite` is a Singer tap for Netsuite, built with the Meltano SDK for Singer Taps."
 authors = ["Josué Sehnem"]
 keywords = [
